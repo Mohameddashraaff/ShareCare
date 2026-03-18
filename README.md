@@ -65,4 +65,5 @@ ShCA/
 └── README.md          # This file
 
 # Note:
-Clipboard auto-copy works with pyperclip – may require xclip or xsel on Linux.
+- Clipboard auto-copy works with pyperclip – may require xclip or xsel on Linux.
+- YOu must put the file you want to share from your laptop in the same direcroty of tool
