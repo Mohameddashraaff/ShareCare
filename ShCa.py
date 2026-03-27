@@ -82,7 +82,7 @@ DOWNLOAD_HTML = """
 <h1>Download File</h1>
 <p><b>Filename:</b> {{filename}}</p>
 <a href="/download/{{token}}">
-    <button style="font-size:22px;padding:15px 25px;">Download</button>
+    <button style="font-size:20px;padding:10px;">Download {{filename}}</button>
 </a>
 </body>
 </html>
@@ -123,7 +123,7 @@ def index():
     <html>
     <head><meta charset="utf-8"><title>ShCA</title></head>
     <body style="text-align:center;font-size:22px;">
-        <h1>✅ Simple Local Share Server Running</h1>
+        <h1>Simple Local Share Server Running</h1>
         <p>Use your phone to upload files to this laptop.</p>
         <a href="/upload">
             <button style="font-size:22px;padding:15px 25px;">Upload Files</button>
@@ -146,7 +146,12 @@ def share_page(token):
     - HTML page with filename and download button
     - 404 if the token is invalid or expired
     """
-    path = os.path.join(share_dir(token), "file")
+    name_file = os.path.join(share_dir(token), "filename.txt")
+    if not os.path.exists(name_file):
+        return "Invalid or expired link", 404
+
+    filename = open(name_file, encoding="utf-8").read().strip()
+    path = os.path.join(share_dir(token), filename)
     if not os.path.exists(path):
         return "Invalid or expired link", 404
     filename = os.path.basename(path)
@@ -165,10 +170,15 @@ def download(token):
     Returns:
     - File download or 404 if invalid
     """
-    path = os.path.join(share_dir(token), "file")
+    name_file = os.path.join(share_dir(token), "filename.txt")
+    if not os.path.exists(name_file):
+        return "Invalid or expired link", 404
+
+    filename = open(name_file, encoding="utf-8").read().strip()
+    path = os.path.join(share_dir(token), filename)
     if not os.path.exists(path):
         return "Invalid or expired link", 404
-    return send_file(path, as_attachment=True)
+    return send_file(path, as_attachment=True, download_name=filename)
 
 
 @app.route("/upload", methods=["GET"])
@@ -231,8 +241,12 @@ def create_share(file_path, host, port, ttl):
     d = share_dir(token)
     os.makedirs(d, exist_ok=True)
 
-    dest = os.path.join(d, "file")
+    filename = os.path.basename(file_path)
+    dest = os.path.join(d, filename)
     shutil.copy(file_path, dest)
+
+    with open(os.path.join(d, "filename.txt"), "w", encoding="utf-8") as f:
+        f.write(filename)
 
     expiry = time.time() + ttl * 60
     with open(os.path.join(d, "expiry.txt"), "w") as f:
