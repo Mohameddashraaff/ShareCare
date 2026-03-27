@@ -5,10 +5,15 @@
 
 import os, time, secrets, shutil, threading, argparse
 from flask import Flask, request, send_file, render_template_string, redirect, url_for
+from werkzeug.utils import secure_filename
 import qrcode
-import pyperclip  # For clipboard auto-copy
 
-# Bsae Directoy
+try:
+    import pyperclip  # Optional clipboard auto-copy
+except Exception:
+    pyperclip = None
+
+# Base Directory
 
 BASE_DIR = os.path.abspath(".")  # Root directory of the tool
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")  # Folder where uploaded files are saved
@@ -27,10 +32,10 @@ app = Flask(__name__)  # Initialize Flask app
 def generate_token(n=8):
     """
     Generate a random alphanumeric token used for share URLs.
-    
+
     Parameters:
     - n (int): Length of the token (default 8)
-    
+
     Returns:
     - str: Random token composed of uppercase letters and digits
     """
@@ -342,6 +347,17 @@ UPLOAD_HTML = """
 
     .content { padding: 22px; }
 
+    .msg {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      color: #bbf7d0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
     .filebox {
       border: 1px dashed rgba(255,255,255,0.16);
       background: rgba(255,255,255,0.03);
@@ -423,14 +439,17 @@ UPLOAD_HTML = """
       </div>
 
       <div class="content">
-        <div class="filebox">
-          <span class="label">Select file</span>
-          <input id="file" type="file">
-        </div>
+        {% if msg %}
+        <div class="msg">{{ msg }}</div>
+        {% endif %}
 
-        <div class="actions">
-          <button class="btn btn-primary" id="send">Upload</button>
-        </div>
+        <form class="filebox" action="/upload" method="post" enctype="multipart/form-data">
+          <span class="label">Select file</span>
+          <input id="file" name="file" type="file" required multiple>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Upload</button>
+          </div>
+        </form>
       </div>
 
       <div class="footer">
@@ -483,10 +502,13 @@ def share_page(token):
     if not os.path.exists(name_file):
         return "Invalid or expired link", 404
 
-    filename = open(name_file, encoding="utf-8").read().strip()
+    with open(name_file, encoding="utf-8") as fh:
+        filename = fh.read().strip()
+
     path = os.path.join(share_dir(token), filename)
     if not os.path.exists(path):
         return "Invalid or expired link", 404
+
     filename = os.path.basename(path)
     return render_template_string(DOWNLOAD_HTML, token=token, filename=filename)
 
@@ -507,10 +529,13 @@ def download(token):
     if not os.path.exists(name_file):
         return "Invalid or expired link", 404
 
-    filename = open(name_file, encoding="utf-8").read().strip()
+    with open(name_file, encoding="utf-8") as fh:
+        filename = fh.read().strip()
+
     path = os.path.join(share_dir(token), filename)
     if not os.path.exists(path):
         return "Invalid or expired link", 404
+
     return send_file(path, as_attachment=True, download_name=filename)
 
 
@@ -531,7 +556,7 @@ def upload_page():
 def upload_file():
     """
     Handle file uploads (POST).
-    Saves all selected files to UPLOADS_DIR and redirects to upload page with message.
+    Saves selected file(s) to UPLOADS_DIR and redirects to upload page with message.
 
     Returns:
     - Redirect to /upload with success message
@@ -543,14 +568,21 @@ def upload_file():
     uploaded_files = []
 
     for f in files:
-        # Save each file to the upload directory
-        filename = f.filename
+        if not f or not f.filename:
+            continue
+
+        filename = secure_filename(os.path.basename(f.filename))
+        if not filename:
+            continue
+
         path = os.path.join(UPLOADS_DIR, filename)
         f.save(path)
         uploaded_files.append(filename)
-        # End of single file save loop
 
-    msg = f"✅ Uploaded successfully: {', '.join(uploaded_files)}"
+    if not uploaded_files:
+        return "No valid file selected", 400
+
+    msg = f" Uploaded successfully: {', '.join(uploaded_files)}"
     return redirect(url_for('upload_page', msg=msg))
 
 
@@ -601,16 +633,19 @@ def create_share(file_path, host, port, ttl):
     qr.print_ascii(invert=True)
 
     # Copy link to clipboard
-    try:
-        pyperclip.copy(url)
-        print(" Share link copied to clipboard!")
-    except:
-        print(" Could not copy to clipboard. Install pyperclip.")
+    if pyperclip is not None:
+        try:
+            pyperclip.copy(url)
+            print("✅ Share link copied to clipboard!")
+        except Exception:
+            print("⚠️ Could not copy to clipboard.")
+    else:
+        print("⚠️ pyperclip is not installed; clipboard copy skipped.")
 
     print(f"\nQR Image saved at: {qr_path}\n")
 
 
-# Cleaup
+# Cleanup
 
 def cleanup():
     """
@@ -624,10 +659,11 @@ def cleanup():
             exp_file = os.path.join(d, "expiry.txt")
             try:
                 if os.path.exists(exp_file):
-                    exp = float(open(exp_file).read())
+                    with open(exp_file) as fh:
+                        exp = float(fh.read())
                     if now > exp:
                         shutil.rmtree(d, ignore_errors=True)
-            except:
+            except Exception:
                 pass
         time.sleep(30)
 
@@ -669,7 +705,7 @@ def main():
 
         create_share(args.file, args.host, args.port, args.ttl)
 
-        print("\ns Server running... Press Ctrl+C to stop")
+        print("\n🚀 Server running... Press Ctrl+C to stop")
         try:
             while True:
                 time.sleep(1)
@@ -678,7 +714,7 @@ def main():
 
     elif args.cmd == "serve":
         threading.Thread(target=cleanup, daemon=True).start()
-        app.run(host=args.host, port=args.port)
+        app.run(host=args.host, port=args.port, use_reloader=False)
 
     else:
         parser.print_help()
