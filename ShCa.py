@@ -667,6 +667,22 @@ def cleanup():
                 pass
         time.sleep(30)
 
+import socket
+
+
+def get_local_ip():
+    """
+    Try to detect the local network IP address automatically.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 
 # Main
 
@@ -694,6 +710,8 @@ def main():
 
     args = parser.parse_args()
 
+    
+
     if args.cmd == "share":
         threading.Thread(target=cleanup, daemon=True).start()
         threading.Thread(
@@ -714,10 +732,19 @@ def main():
 
     elif args.cmd == "serve":
         threading.Thread(target=cleanup, daemon=True).start()
-        app.run(host=args.host, port=args.port, use_reloader=False)
 
-    else:
-        parser.print_help()
+    local_ip = get_local_ip()
+
+    print("\n ShCA Server Started Successfully!\n")
+    print(" Upload Page (use this on your phone):")
+    print(f"   http://{local_ip}:{args.port}/upload\n")
+    print(" You can also access locally:")
+    print(f"   http://127.0.0.1:{args.port}/upload\n")
+    print("Press Ctrl+C to stop the server.\n")
+
+    app.run(host=args.host, port=args.port, use_reloader=False)
+
+
 
 if __name__ == "__main__":
     main()
